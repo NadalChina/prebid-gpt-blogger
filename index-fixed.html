@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Prebid + GPT Blogger Gadget (fixed)</title>
+  <style>
+    /* Simple styles - adjust to your theme as needed */
+    .ad-slot { margin: 12px 0; text-align: center; }
+    #div-gpt-ad-123456789-0 { width: 100%; min-height: 90px; margin: 0 auto; }
+  </style>
+</head>
+<body>
+  <div class="ad-slot">
+    <div id="div-gpt-ad-123456789-0">
+      <!-- GPT will inject the creative here -->
+    </div>
+  </div>
+
+  <!-- Prebid (testing CDN) - for quick testing only -->
+  <script src="https://acdn.adnxs.com/prebid/not-for-prod/prebid.js"></script>
+
+  <!-- Inline prebid-config (safe/test) -->
+  <script>
+    var PREBID_TIMEOUT = 1200;
+    var pbjs = window.pbjs = window.pbjs || {};
+    pbjs.que = pbjs.que || [];
+    pbjs.logging = false;
+
+    // SAFE: no bidders in test mode to avoid adapter/network errors
+    var adUnits = [
+      {
+        code: 'div-gpt-ad-123456789-0',
+        mediaTypes: { banner: { sizes: [[970,250],[728,90],[320,50]] } },
+        bids: []
+      }
+    ];
+
+    function requestPrebidBidsSafe(adUnits, callback) {
+      // If Prebid not loaded, immediately call callback
+      if (!window.pbjs || !pbjs.requestBids) {
+        console.warn('Prebid not loaded or requestBids missing; skipping auction.');
+        if (typeof callback === 'function') callback();
+        return;
+      }
+
+      pbjs.que.push(function() {
+        try {
+          // Use safe adUnits (no bidders) for test; replace with real bidders in production
+          pbjs.addAdUnits(adUnits);
+          pbjs.requestBids({
+            timeout: PREBID_TIMEOUT,
+            bidsBackHandler: function() {
+              try { if (pbjs.setTargetingForGPTAsync) pbjs.setTargetingForGPTAsync(); } catch(e){}
+              if (typeof callback === 'function') callback();
+            }
+          });
+        } catch (err) {
+          console.error('Prebid request error', err);
+          if (typeof callback === 'function') callback();
+        }
+
+        // Fallback: ensure callback runs even if bidders hang
+        setTimeout(function() {
+          try { if (pbjs.setTargetingForGPTAsync) pbjs.setTargetingForGPTAsync(); } catch(e){}
+          if (typeof callback === 'function') callback();
+        }, PREBID_TIMEOUT + 300);
+      });
+    }
+
+    window.requestPrebidBidsSafe = requestPrebidBidsSafe;
+    window.prebidAdUnits = adUnits;
+  </script>
+
+  <!-- GPT (Google Publisher Tag) -->
+  <script async src="https://securepubads.g.doubleclick.net/tag/js/gpt.js" crossorigin="anonymous"></script>
+
+  <!-- Inline GPT setup (safer ordering) -->
+  <script>
+    window.googletag = window.googletag || {cmd: []};
+
+    // Define slots and config but do NOT enableServices() until after Prebid targeting is set.
+    googletag.cmd.push(function() {
+      var mapping = googletag.sizeMapping()
+        .addSize([1024, 0], [[970,250],[728,90]])
+        .addSize([768, 0], [[728,90]])
+        .addSize([0, 0], [[320,50]])
+        .build();
+
+      googletag.defineSlot('/23322983346/456', [[970,250],[728,90],[320,50]], 'div-gpt-ad-123456789-0')
+        .defineSizeMapping(mapping)
+        .addService(googletag.pubads());
+
+      // Configure pubads now (before enableServices)
+      try { googletag.pubads().enableSingleRequest(); } catch(e){}
+      try { googletag.pubads().collapseEmptyDivs(); } catch(e){}
+
+      // Defer enableLazyLoad until after services exist; check method safely later
+      window._gpt_services_ready = false;
+    });
+
+    // Run Prebid auction then enableServices and display the slot
+    (function() {
+      window.requestPrebidBidsSafe(window.prebidAdUnits, function() {
+        googletag.cmd.push(function() {
+          try {
+            // Apply Prebid targeting if available
+            if (window.pbjs && pbjs.setTargetingForGPTAsync) {
+              try { pbjs.setTargetingForGPTAsync(); } catch(e) { console.warn('pbjs.setTargetingForGPTAsync error', e); }
+            }
+
+            // Now enable services (only once)
+            if (!window._gpt_services_ready) {
+              try {
+                // Enable lazy load if available
+                if (googletag.pubads && typeof googletag.pubads().enableLazyLoad === 'function') {
+                  try {
+                    googletag.pubads().enableLazyLoad({ fetchMarginPercent: 200, renderMarginPercent: 50, mobileScaling: 2.0 });
+                  } catch(e) { console.warn('enableLazyLoad failed', e); }
+                }
+
+                googletag.enableServices();
+                window._gpt_services_ready = true;
+              } catch (e) {
+                console.warn('googletag.enableServices() failed', e);
+              }
+            }
+
+            // Display the slot (or refresh if already displayed)
+            try {
+              googletag.display('div-gpt-ad-123456789-0');
+            } catch (displayErr) {
+              try {
+                var slots = googletag.pubads && googletag.pubads().getSlots ? googletag.pubads().getSlots() : [];
+                var theSlot = slots.filter ? slots.filter(function(s){ return s.getSlotElementId && s.getSlotElementId() === 'div-gpt-ad-123456789-0'; })[0] : null;
+                if (theSlot) { googletag.pubads().refresh([theSlot]); }
+              } catch (refreshErr) { console.warn('refresh failed', refreshErr); }
+            }
+
+          } catch (err) {
+            console.error('Error in GPT display flow', err);
+          }
+        });
+      });
+    })();
+  </script>
+
+  <!-- Lightweight debug info -->
+  <script>
+    window.addEventListener('load', function() {
+      try {
+        if (window.pbjs && pbjs.getAdserverTargetingForAdUnitCode) {
+          console.log('pbjs targeting:', pbjs.getAdserverTargetingForAdUnitCode('div-gpt-ad-123456789-0'));
+        } else {
+          console.log('Prebid not present or no targeting yet.');
+        }
+      } catch(e) { console.warn(e); }
+    });
+  </script>
+</body>
+</html>
